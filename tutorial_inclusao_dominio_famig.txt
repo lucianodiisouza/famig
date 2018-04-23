@@ -1,0 +1,116 @@
+Colocando estações linux no domínio:
+
+Editar arquivo de hosts (xxx é o numero do terminal)
+sudo nano /etc/hosts
+
+127.0.0.1	localhost
+ipdamaquina	terminal-XXX.famig.edu terminal-XXX
+
+# The following lines are desirable for IPv6 capable hosts
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+
+Instalar as biliotecas e suas dependencias
+
+sudo apt-get install krb5-user krb5-config winbind samba samba-common smbclient cifs-utils libpam-krb5 libpam-winbind libnss-winbind ntp
+
+Sincronizar o relógio do terminal com o relógio do servidor
+
+sudo nano /etc/ntp.conf
+server 101.1.1.2
+restrict 101.1.1.2
+
+em seguida reiniciar serviço NTP
+
+systemctl restart ntp.service 
+
+editar o resolv.conf (pode pular essa parte) 
+
+
+editar o arquivo de configuração do KERBERUS
+
+sudo rm /etc/krb5.conf
+
+sudo nano /etc/krb5.conf
+
+[logging]
+Default = FILE:/var/log/krb5.log
+ 
+[libdefaults]
+ticket_lifetime = 24000
+clock-skew = 300
+default_realm = FAMIG.EDU
+dns_lookup_realm = true
+dns_lookup_kdc = true
+ 
+[realms]
+FAMIG.EDU = {
+kdc = 101.1.1.2
+default_domain = famig.edu
+admin_server = 101.1.1.2
+}
+ 
+[domain_realm]
+.famig.edu = FAMIG.EDU
+famig.edu = FAMIG.EDU
+ 
+[login]
+krb4_convert = true
+krb4_get_tickets = false
+
+
+Se tudo der certo, ao rodar 'kinit administrador' (sem aspas) 
+o terminal irá pedir a senha do usuário Administrador, do servidor windows
+para testar depois do login, use o comando klist
+
+
+Crie um novo arquivo smb.conf, no lugar do terminal XX digite o numero da maquina  
+sudo rm /etc/samba/smb.conf
+sudo nano /etc/samba/smb.conf
+
+[global]
+workgroup = FAMIGEDU
+realm = FAMIG.EDU
+netbios name = terminal-XX
+security = ADS
+dns forwarder = 101.1.1.2
+idmap config * : backend = tdb        
+idmap config *:range = 50000-1000000
+template homedir = /home/%D/%U
+template shell = /bin/bash
+winbind use default domain = true
+winbind offline logon = false
+winbind nss info = rfc2307
+winbind enum users = yes
+winbind enum groups = yes
+vfs objects = acl_xattr
+map acl inherit = Yes
+store dos attributes = Yes
+
+em seguida, reinicie o samba e o winbind
+sudo systemctl restart samba-ad-dc.service
+sudo systemctl restart winbind.service
+
+para adicionar a maquina no dominio use o comando:
+	
+sudo net ads join -U administrador
+
+para confirmar e testar use o comando sudo net ads testjoin
+
+edite o arquivo /etc/nsswitch.conf
+sudo nano /etc/nsswitch.conf
+passwd:		compat winbind
+group:		compat winbind
+shadown:	compat winbind
+
+
+edite o arquivo 
+sudo /etc/pam.d/common-session
+
+procure a linha 
+session required pam_unix.so
+
+e adiciona esta linha abaixo dela:
+session required pam_mkhomedir.so umask=0022 skel=/etc/skel
+
+
